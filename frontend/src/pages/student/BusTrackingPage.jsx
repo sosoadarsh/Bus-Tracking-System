@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { MapView } from "@/components/MapView";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Locate, Hand, QrCode, Check } from "lucide-react";
+import { ArrowLeft, Locate, Hand, QrCode, Check, Bell } from "lucide-react";
 import { toast } from "sonner";
 
 const KM_PER_MIN = 0.5;
@@ -30,6 +30,19 @@ export default function BusTrackingPage() {
   const [scanCode, setScanCode] = useState("");
   const [myBoarded, setMyBoarded] = useState(false);
   const [myRequests, setMyRequests] = useState([]);
+  const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "denied");
+  const myRequestsRef = useRef([]);
+  useEffect(() => { myRequestsRef.current = myRequests; }, [myRequests]);
+
+  const askNotifPerm = async () => {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") {
+      const p = await Notification.requestPermission();
+      setNotifPerm(p);
+    } else {
+      setNotifPerm(Notification.permission);
+    }
+  };
 
   const reloadRequests = async () => {
     try {
@@ -56,6 +69,18 @@ export default function BusTrackingPage() {
         }
         if (msg.type === "boarding:ack" && msg.trip_id === tripId) {
           reloadRequests();
+        }
+        if (msg.type === "alert:approaching" && msg.trip_id === tripId) {
+          const subscribed = myRequestsRef.current.some((r) => r.stop_id === msg.target_stop_id && r.status === "pending");
+          if (subscribed) {
+            toast.warning(`Bus is 2 stops away — get ready at ${msg.target_stop_name}`, {
+              description: `Currently approaching ${msg.next_stop_name}`,
+              duration: 8000,
+            });
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+              try { new Notification("Your bus is 2 stops away", { body: `Get ready at ${msg.target_stop_name}` }); } catch (_) {}
+            }
+          }
         }
       },
       setWsStatus
@@ -104,6 +129,15 @@ export default function BusTrackingPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => setFollowBus((v) => !v)} data-testid="center-btn"><Locate className="w-4 h-4 mr-2" />{followBus ? "Unfollow" : "Center"}</Button>
+          <Button
+            variant={notifPerm === "granted" ? "secondary" : "outline"}
+            size="sm"
+            onClick={askNotifPerm}
+            data-testid="notif-btn"
+            title={notifPerm === "granted" ? "Alerts on" : "Enable browser alerts"}
+          >
+            <Bell className="w-4 h-4 mr-2" />{notifPerm === "granted" ? "Alerts on" : "Alerts"}
+          </Button>
           <Button size="sm" onClick={() => setBoardOpen(true)} data-testid="request-board-btn"><Hand className="w-4 h-4 mr-2" />Request board</Button>
           <Button variant={myBoarded ? "secondary" : "default"} size="sm" disabled={!trip} onClick={() => { setScanCode(trip?.bus?.bus_number || ""); setScanOpen(true); }} data-testid="scan-qr-btn">
             {myBoarded ? <><Check className="w-4 h-4 mr-2" />Boarded</> : <><QrCode className="w-4 h-4 mr-2" />Scan QR</>}

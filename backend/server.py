@@ -30,7 +30,7 @@ from models import (
     LocationCreate, BoardingRequestCreate, ScanBody,
 )
 from seed import seed_all
-from simulation import simulation, broadcaster
+from simulation import simulation, broadcaster, tracker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("bus-tracking")
@@ -384,6 +384,7 @@ async def end_trip(trip_id: str, user=Depends(require_role("DRIVER"))):
     if t["status"] != "ACTIVE":
         raise HTTPException(409, "Trip is not active")
     simulation.stop(trip_id)
+    tracker.clear(trip_id)
     await db.trips.update_one({"id": trip_id}, {"$set": {"status": "COMPLETED", "end_time": _now()}})
     await db.buses.update_one({"id": t["bus_id"]}, {"$set": {"status": "INACTIVE", "updated_at": _now()}})
     await broadcaster.broadcast({"type": "trip:ended", "trip_id": trip_id, "bus_id": t["bus_id"]})
@@ -406,6 +407,15 @@ async def push_location(trip_id: str, body: LocationCreate, user=Depends(require
         "type": "location:update", "trip_id": trip_id, "bus_id": t["bus_id"],
         "latitude": body.latitude, "longitude": body.longitude, "timestamp": point["timestamp"],
     })
+    # 2-stops-away alert
+    stops = [_strip(s) for s in await db.stops.find({"route_id": t["route_id"]}).sort("stop_order", 1).to_list(500)]
+    change = tracker.check(trip_id, body.latitude, body.longitude, stops)
+    if change and change["target"]:
+        await broadcaster.broadcast({
+            "type": "alert:approaching", "trip_id": trip_id, "bus_id": t["bus_id"],
+            "next_stop_id": change["next_stop"]["id"], "next_stop_name": change["next_stop"]["stop_name"],
+            "target_stop_id": change["target"]["id"], "target_stop_name": change["target"]["stop_name"],
+        })
     return _strip(point)
 
 
