@@ -27,7 +27,7 @@ from models import (
     Route, RouteCreate, RouteUpdate,
     Stop, StopCreate, StopUpdate,
     Assignment, AssignmentCreate,
-    LocationCreate,
+    LocationCreate, BoardingRequestCreate, ScanBody,
 )
 from seed import seed_all
 from simulation import simulation, broadcaster
@@ -415,6 +415,102 @@ async def get_locations(trip_id: str, user=Depends(get_current_user)):
     return _strip(latest[0]) if latest else None
 
 
+# ---------- boarding requests ----------
+@api.post("/trips/{trip_id}/boarding-requests")
+async def create_boarding_request(trip_id: str, body: BoardingRequestCreate, user=Depends(require_role("STUDENT"))):
+    trip = await db.trips.find_one({"id": trip_id, "status": "ACTIVE"})
+    if not trip:
+        raise HTTPException(404, "Active trip not found")
+    stop = await db.stops.find_one({"id": body.stop_id, "route_id": trip["route_id"]})
+    if not stop:
+        raise HTTPException(400, "Stop does not belong to this trip's route")
+    # prevent duplicate pending request from same student for same stop
+    existing = await db.boarding_requests.find_one({
+        "trip_id": trip_id, "student_id": user["id"], "stop_id": body.stop_id, "status": "pending",
+    })
+    if existing:
+        return _strip(existing)
+    doc = {
+        "id": str(uuid.uuid4()), "trip_id": trip_id, "bus_id": trip["bus_id"],
+        "student_id": user["id"], "student_name": user["name"],
+        "stop_id": body.stop_id, "stop_name": stop["stop_name"],
+        "status": "pending", "created_at": _now(),
+    }
+    await db.boarding_requests.insert_one(doc)
+    doc.pop("_id", None)
+    await broadcaster.broadcast({"type": "boarding:new", "trip_id": trip_id, "bus_id": trip["bus_id"], "stop_id": body.stop_id, "stop_name": stop["stop_name"], "student_name": user["name"]})
+    return doc
+
+
+@api.get("/trips/{trip_id}/boarding-requests")
+async def list_boarding_requests(trip_id: str, user=Depends(get_current_user)):
+    trip = await db.trips.find_one({"id": trip_id})
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if user["role"] == "DRIVER" and trip["driver_id"] != user["id"]:
+        raise HTTPException(403, "Not your trip")
+    if user["role"] == "STUDENT":
+        # students only see their own requests
+        items = [_strip(r) for r in await db.boarding_requests.find({"trip_id": trip_id, "student_id": user["id"]}).to_list(200)]
+        return {"items": items, "by_stop": []}
+    items = [_strip(r) for r in await db.boarding_requests.find({"trip_id": trip_id}).sort("created_at", 1).to_list(500)]
+    # aggregate by stop
+    by_stop = {}
+    for r in items:
+        k = r["stop_id"]
+        if k not in by_stop:
+            by_stop[k] = {"stop_id": k, "stop_name": r["stop_name"], "pending": 0, "acknowledged": 0, "students": []}
+        by_stop[k][r["status"]] = by_stop[k].get(r["status"], 0) + 1
+        by_stop[k]["students"].append({"id": r["id"], "name": r["student_name"], "status": r["status"]})
+    return {"items": items, "by_stop": list(by_stop.values())}
+
+
+@api.post("/trips/{trip_id}/boarding-requests/{req_id}/acknowledge")
+async def ack_boarding_request(trip_id: str, req_id: str, user=Depends(require_role("DRIVER"))):
+    trip = await db.trips.find_one({"id": trip_id, "driver_id": user["id"]})
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    res = await db.boarding_requests.update_one(
+        {"id": req_id, "trip_id": trip_id},
+        {"$set": {"status": "acknowledged", "acknowledged_at": _now()}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "Request not found")
+    await broadcaster.broadcast({"type": "boarding:ack", "trip_id": trip_id, "request_id": req_id})
+    return {"ok": True}
+
+
+# ---------- attendance / QR scan ----------
+@api.post("/attendance/scan")
+async def scan_bus(body: ScanBody, user=Depends(require_role("STUDENT"))):
+    bus = await db.buses.find_one({"bus_number": body.bus_number.strip().upper()})
+    if not bus:
+        raise HTTPException(404, "Invalid bus QR / number")
+    trip = await db.trips.find_one({"bus_id": bus["id"], "status": "ACTIVE"})
+    if not trip:
+        raise HTTPException(409, "Bus is not currently on an active trip")
+    if await db.attendance.find_one({"trip_id": trip["id"], "student_id": user["id"]}):
+        return {"ok": True, "already": True, "trip_id": trip["id"], "bus_number": bus["bus_number"]}
+    await db.attendance.insert_one({
+        "id": str(uuid.uuid4()), "trip_id": trip["id"], "bus_id": bus["id"],
+        "student_id": user["id"], "student_name": user["name"],
+        "created_at": _now(),
+    })
+    await broadcaster.broadcast({"type": "attendance:new", "trip_id": trip["id"], "bus_id": bus["id"], "student_name": user["name"]})
+    return {"ok": True, "already": False, "trip_id": trip["id"], "bus_number": bus["bus_number"]}
+
+
+@api.get("/trips/{trip_id}/attendance")
+async def trip_attendance(trip_id: str, user=Depends(get_current_user)):
+    trip = await db.trips.find_one({"id": trip_id})
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if user["role"] == "DRIVER" and trip["driver_id"] != user["id"]:
+        raise HTTPException(403, "Not your trip")
+    items = [_strip(a) for a in await db.attendance.find({"trip_id": trip_id}).sort("created_at", 1).to_list(1000)]
+    return {"count": len(items), "items": items}
+
+
 # ---------- stats ----------
 @api.get("/stats/overview")
 async def stats(_=Depends(require_role("ADMIN"))):
@@ -474,6 +570,8 @@ async def _startup():
     await db.buses.create_index("registration_number", unique=True)
     await db.stops.create_index([("route_id", 1), ("stop_order", 1)])
     await db.locations.create_index([("trip_id", 1), ("timestamp", -1)])
+    await db.boarding_requests.create_index([("trip_id", 1), ("status", 1)])
+    await db.attendance.create_index([("trip_id", 1), ("student_id", 1)], unique=True)
     await seed_all(db)
     logger.info("Bus tracking backend ready.")
 

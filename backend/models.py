@@ -174,3 +174,11 @@ class LocationPoint(BaseModel):
 class LocationCreate(BaseModel):
     latitude: float
     longitude: float
+
+
+class BoardingRequestCreate(BaseModel):
+    stop_id: str
+
+
+class ScanBody(BaseModel):
+    bus_number: str

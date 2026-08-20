@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, formatApiError } from "@/lib/api";
 import { MapView } from "@/components/MapView";
 import { connectWS } from "@/lib/ws";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Locate } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ArrowLeft, Locate, Hand, QrCode, Check } from "lucide-react";
+import { toast } from "sonner";
 
-const KM_PER_MIN = 0.5; // ~30 km/h city speed => 0.5 km per minute
+const KM_PER_MIN = 0.5;
 
 function distanceKm(a, b) {
   if (!a || !b) return null;
@@ -22,12 +25,24 @@ export default function BusTrackingPage() {
   const [pos, setPos] = useState(null);
   const [wsStatus, setWsStatus] = useState("connecting");
   const [followBus, setFollowBus] = useState(true);
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanCode, setScanCode] = useState("");
+  const [myBoarded, setMyBoarded] = useState(false);
+  const [myRequests, setMyRequests] = useState([]);
 
+  const reloadRequests = async () => {
+    try {
+      const { data } = await api.get(`/trips/${tripId}/boarding-requests`);
+      setMyRequests(data.items || []);
+    } catch (_) {}
+  };
   useEffect(() => {
     api.get(`/trips/${tripId}`).then((r) => {
       setTrip(r.data);
       if (r.data.latest_location) setPos({ latitude: r.data.latest_location.latitude, longitude: r.data.latest_location.longitude, ts: r.data.latest_location.timestamp });
     });
+    reloadRequests();
   }, [tripId]);
 
   useEffect(() => {
@@ -38,6 +53,9 @@ export default function BusTrackingPage() {
         }
         if (msg.type === "trip:ended" && msg.trip_id === tripId) {
           api.get(`/trips/${tripId}`).then((r) => setTrip(r.data));
+        }
+        if (msg.type === "boarding:ack" && msg.trip_id === tripId) {
+          reloadRequests();
         }
       },
       setWsStatus
@@ -57,15 +75,40 @@ export default function BusTrackingPage() {
     return { nextStop: next, distKm: d, etaMin: d != null ? Math.max(1, Math.round(d / KM_PER_MIN)) : null };
   }, [pos, trip?.stops]);
 
+  const requestBoard = async (stop) => {
+    try {
+      await api.post(`/trips/${tripId}/boarding-requests`, { stop_id: stop.id });
+      toast.success(`Notified driver: ${stop.stop_name}`);
+      setBoardOpen(false);
+      reloadRequests();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const submitScan = async (e) => {
+    e.preventDefault();
+    try {
+      const { data } = await api.post("/attendance/scan", { bus_number: scanCode });
+      if (data.already) toast.info("Already checked in on this bus"); else toast.success(`Checked in on ${data.bus_number}`);
+      setMyBoarded(true);
+      setScanOpen(false);
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
   return (
     <div className="min-h-screen relative bg-background">
-      <div className="absolute top-4 left-4 right-4 z-[1000] flex items-center justify-between gap-2">
+      <div className="absolute top-4 left-4 right-4 z-[1000] flex items-center justify-between gap-2 flex-wrap">
         <Link to="/student"><Button variant="secondary" size="sm" data-testid="back-btn"><ArrowLeft className="w-4 h-4 mr-2" />Back</Button></Link>
         <div data-testid="ws-status" className="glass rounded-full px-3 py-1.5 text-xs mono flex items-center gap-2">
           <span className={wsStatus === "connected" ? "live-dot" : ""} />
           {trip?.bus?.bus_number} · {wsStatus}
         </div>
-        <Button variant="secondary" size="sm" onClick={() => setFollowBus((v) => !v)} data-testid="center-btn"><Locate className="w-4 h-4 mr-2" />{followBus ? "Unfollow" : "Center on Bus"}</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setFollowBus((v) => !v)} data-testid="center-btn"><Locate className="w-4 h-4 mr-2" />{followBus ? "Unfollow" : "Center"}</Button>
+          <Button size="sm" onClick={() => setBoardOpen(true)} data-testid="request-board-btn"><Hand className="w-4 h-4 mr-2" />Request board</Button>
+          <Button variant={myBoarded ? "secondary" : "default"} size="sm" disabled={!trip} onClick={() => { setScanCode(trip?.bus?.bus_number || ""); setScanOpen(true); }} data-testid="scan-qr-btn">
+            {myBoarded ? <><Check className="w-4 h-4 mr-2" />Boarded</> : <><QrCode className="w-4 h-4 mr-2" />Scan QR</>}
+          </Button>
+        </div>
       </div>
 
       <div className="absolute inset-0">
@@ -99,9 +142,48 @@ export default function BusTrackingPage() {
               {trip?.start_time && <div className="text-xs mono text-muted-foreground">Started {new Date(trip.start_time).toLocaleTimeString()}</div>}
             </div>
           </div>
+          {myRequests.length > 0 && (
+            <div className="mt-3 text-xs text-muted-foreground">
+              Your requests: {myRequests.map((r) => <span key={r.id} className="mr-2 mono">{r.stop_name} · {r.status}</span>)}
+            </div>
+          )}
           <div className="mt-3 text-xs text-muted-foreground">ETA is approximate — based on distance & average city speed.</div>
         </div>
       </div>
+
+      <Dialog open={boardOpen} onOpenChange={setBoardOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Request boarding — pick your stop</DialogTitle></DialogHeader>
+          <div className="space-y-2">
+            {(trip?.stops || []).map((s) => (
+              <button
+                key={s.id}
+                onClick={() => requestBoard(s)}
+                className="w-full flex items-center justify-between border border-border rounded-md px-3 py-2 hover:border-primary/50 hover:bg-muted"
+                style={{ transition: "border-color 0.2s ease, background-color 0.2s ease" }}
+                data-testid={`request-stop-${s.stop_name}`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="mono text-xs px-2 py-0.5 rounded bg-primary text-primary-foreground">#{s.stop_order}</span>
+                  <span className="font-medium">{s.stop_name}</span>
+                </div>
+                <Hand className="w-4 h-4" />
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={scanOpen} onOpenChange={setScanOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Scan boarding QR</DialogTitle></DialogHeader>
+          <form onSubmit={submitScan} className="space-y-4">
+            <div className="text-sm text-muted-foreground">Type the code shown on the bus QR (e.g., <span className="mono">BUS-01</span>). This checks you in on the current trip.</div>
+            <Input placeholder="BUS-01" required value={scanCode} onChange={(e) => setScanCode(e.target.value)} data-testid="scan-input" />
+            <DialogFooter><Button type="submit" data-testid="submit-scan-btn"><QrCode className="w-4 h-4 mr-2" />Check in</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

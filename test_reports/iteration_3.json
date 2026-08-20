@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 3: Validated new features — boarding requests, QR bus attendance/scan, admin search+pagination+QR dialog. 15/15 backend pytest cases pass. Frontend admin/driver/student flows verified end-to-end including WS live update of driver console when student sends boarding request and QR scan check-in.",
+  "tested_scope": ["backend", "frontend", "integration", "websocket"],
+  "passed": [
+    "POST /api/trips/{trip_id}/boarding-requests: valid stop 200, duplicate returns same doc (idempotent), bad stop 400, missing/inactive trip 404",
+    "GET /api/trips/{trip_id}/boarding-requests: driver-own returns items+by_stop aggregate; other DRIVER 403; STUDENT sees own only",
+    "POST /api/trips/{trip_id}/boarding-requests/{req_id}/acknowledge: driver flips to acknowledged; student 403",
+    "POST /api/attendance/scan: valid scan 200 {ok:true,already:false}, duplicate returns already:true, invalid bus 404, idle bus 409",
+    "GET /api/trips/{trip_id}/attendance: driver-own and admin return {count,items}; other driver 403",
+    "Admin /admin/buses: buses-search live filter works (search 'BUS-01' -> 1 row), QR dialog opens on qr-bus-BUS-01 showing api.qrserver.com <img> and code 'BUS-01'. Only 5 buses in seed -> pagination controls hidden (correct behaviour per PAGE_SIZE=8).",
+    "Admin /admin/drivers: drivers-search filters (search 'rahul' -> 1 row)",
+    "Admin /admin/students: students-search filters (search 'priya' -> 1 row)",
+    "Driver dashboard shows Boarding Requests section + Boarded count card while trip active; when Priya sends boarding request for Civil Lines the driver UI updates within <5s via WS boarding:new — visible '1 pending' badge + 'Civil Lines · 1 waiting · 0 acknowledged · Priya Deshmukh'. Clicking Acknowledge removes the pending count.",
+    "Student /student/track/:tripId: request-board-btn opens per-stop dialog, click request-stop-Civil Lines -> success toast 'Notified driver'. scan-qr-btn opens dialog with scan-input pre-filled 'BUS-01' -> submit-scan-btn -> toast 'Checked in on BUS-01' and button switches to 'Boarded'. Server attendance count=1 for Amit Verma confirmed."
+  ],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Student BusTrackingPage scan-qr pre-fill", "issue": "If user clicks scan-qr-btn BEFORE the initial GET /trips/{id} resolves, scanCode is set to '' (trip?.bus?.bus_number is undefined). User must then manually type the code. Rare race; only observed on very fast interaction after route change.", "affected_selectors": ["[data-testid=scan-input]"]}
+    ],
+    "design_issues": [
+      {"screen": "All Dialogs", "issues": ["Radix DialogContent missing aria Description / aria-describedby (accessibility warning in console). Minor."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_boarding_scan.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Minor) Disable scan-qr-btn until `trip` state has loaded, OR fall back to reading bus_number from tripId path once fetched, so scanCode is never empty on first click.",
+    "(Minor a11y) Add DialogDescription to Dialogs in BusesPage QR dialog, BusTrackingPage boarding/scan dialogs, etc., to silence Radix a11y warning.",
+    "(Cleanup) BusTrackingPage.reloadMyAttendance() is a no-op — dead code, remove."
+  ],
+  "critical_code_review_comments": [
+    "server.py list_boarding_requests: response typing is dict for admin/driver but for student also returns {items, by_stop:[]} — good consistency. However when trip status != ACTIVE this endpoint still returns data — acceptable but consider gating.",
+    "attendance.scan uses body.bus_number.strip().upper() but ScanBody has no validation length; consider min_length=1 in the model.",
+    "BusesPage QR image loaded from external api.qrserver.com — external dependency at admin runtime; consider server-side QR generation or caching to avoid third-party outage.",
+    "Frontend student BusTrackingPage.reloadMyAttendance is unreachable/no-op and myBoarded state does not survive page reload (no server sync). Minor UX polish."
+  ],
+  "updated_files": ["/app/backend/tests/test_boarding_scan.py"],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (all critical flows)"},
+  "test_credentials": "Admin awaleadarsh45@gmail.com/admin123, Driver rahul@college.edu/driver123, Students priya/amit @college.edu / student123",
+  "seed_data_creation": "None; used existing seed data. Tests end active trips before starting and clean up at teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_boarding_scan.py. Run with `cd /app/backend && pytest tests/test_boarding_scan.py -n 0` (serial required because trip-start creates shared driver state). All new endpoints validated. WS boarding:new event confirmed reaching driver UI within ~2s. Only cosmetic issues remain (dialog a11y, scan pre-fill race, dead reloadMyAttendance)."
+}

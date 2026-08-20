@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, formatApiError } from "@/lib/api";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -8,17 +8,29 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 
+const PAGE_SIZE = 8;
+
 export default function DriversPage() {
   const [rows, setRows] = useState([]);
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", password: "driver123", phone: "", license_number: "" });
 
   const load = () => api.get("/drivers").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
 
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return s ? rows.filter((d) => (d.name + " " + d.email + " " + (d.license_number || "")).toLowerCase().includes(s)) : rows;
+  }, [rows, q]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   const save = async (e) => {
     e.preventDefault();
-    try { await api.post("/drivers", form); toast.success("Driver created"); setOpen(false); load(); }
+    try { await api.post("/drivers", form); toast.success("Driver created"); setOpen(false); setForm({ name: "", email: "", password: "driver123", phone: "", license_number: "" }); load(); }
     catch (err) { toast.error(formatApiError(err)); }
   };
   const del = async (id) => {
@@ -29,9 +41,12 @@ export default function DriversPage() {
   return (
     <AppShell>
       <div className="p-8">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div><div className="overline">People</div><h1 className="heading text-4xl font-black mt-2">Drivers</h1></div>
-          <Button onClick={() => setOpen(true)} data-testid="add-driver-btn"><Plus className="w-4 h-4 mr-2" />Add Driver</Button>
+          <div className="flex items-center gap-2">
+            <Input placeholder="Search drivers…" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} className="max-w-xs" data-testid="drivers-search" />
+            <Button onClick={() => setOpen(true)} data-testid="add-driver-btn"><Plus className="w-4 h-4 mr-2" />Add Driver</Button>
+          </div>
         </div>
         <div className="border border-border rounded-lg overflow-hidden bg-card">
           <table className="w-full text-sm">
@@ -39,8 +54,8 @@ export default function DriversPage() {
               <tr>{["Name","Email","Phone","License","Actions"].map((h) => <th key={h} className="px-4 py-3 overline">{h}</th>)}</tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">No drivers.</td></tr>}
-              {rows.map((d) => (
+              {pageItems.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">No drivers match.</td></tr>}
+              {pageItems.map((d) => (
                 <tr key={d.id} className="border-t border-border" data-testid={`driver-row-${d.email}`}>
                   <td className="px-4 py-3 font-semibold">{d.name}</td>
                   <td className="px-4 py-3 text-muted-foreground">{d.email}</td>
@@ -53,6 +68,15 @@ export default function DriversPage() {
               ))}
             </tbody>
           </table>
+          {filtered.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border text-sm">
+              <div className="text-muted-foreground mono">Page {currentPage} / {totalPages} · {filtered.length} results</div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)} data-testid="drivers-prev">Prev</Button>
+                <Button size="sm" variant="outline" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)} data-testid="drivers-next">Next</Button>
+              </div>
+            </div>
+          )}
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogContent>
