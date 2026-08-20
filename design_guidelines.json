@@ -1,0 +1,174 @@
+{
+  "theme_strategy": "hybrid_toggle",
+  "typography": {
+    "headings": {
+      "font_family": "Outfit, sans-serif",
+      "styles": [
+        "tracking-tight",
+        "font-black",
+        "leading-none"
+      ],
+      "banned": [
+        "Inter",
+        "Roboto",
+        "Open Sans",
+        "Lato"
+      ],
+      "sizes": {
+        "h1": "text-4xl sm:text-5xl lg:text-6xl",
+        "h2": "text-2xl sm:text-3xl lg:text-4xl",
+        "h3": "text-xl sm:text-2xl",
+        "h4": "text-lg sm:text-xl"
+      },
+      "hierarchy_rule": "The jump between heading and subheading must not exceed 2 Tailwind steps."
+    },
+    "body": {
+      "font_family": "IBM Plex Sans, sans-serif",
+      "styles": [
+        "leading-relaxed"
+      ],
+      "sizes": {
+        "default": "text-base",
+        "small": "text-sm",
+        "overline": "uppercase tracking-[0.2em] text-xs"
+      }
+    }
+  },
+  "colors": {
+    "archetype": "ARCHETYPE 4: SWISS & HIGH-CONTRAST",
+    "vibe": "Authority, Clarity, Truth (Transit & Logistics)",
+    "rules": [
+      "No full-screen gradients. Texture > gloss.",
+      "The 'Tinted Grey' Rule: Never use pure #000000 or #808080. Tint neutral greys slightly blue for cool, or orange for warm.",
+      "Color is Function Only: 95% of UI monochrome. Color exists only to guide action.",
+      "Forbidden for Dashboards: #1B93A4 (teal green/blue)."
+    ],
+    "palette": {
+      "base_light": "Stark White (#FFFFFF) & 10% Grey (#F3F4F6)",
+      "base_dark": "Deep Obsidian (#0A0A0A) & Border/Cards (#141414)",
+      "primary_accent": "Signal Red (#E63946)",
+      "secondary_accent": "Transit Yellow (#FFD166) for Warnings/Buses",
+      "active_tracking": "Electric Blue (#007AFF) for Map Paths"
+    }
+  },
+  "visual enhancers": {
+    "surfaces": [
+      {
+        "type": "Glassmorphism (Crystal)",
+        "use_case": "Sticky Headers, Floating Map Controls (Student Info Card)",
+        "implementation": "bg-white/70 dark:bg-black/60 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-sm"
+      },
+      {
+        "type": "Grid Borders (Technical)",
+        "use_case": "Admin Dashboard, Data Tables, Stats Cards",
+        "implementation": "Flat background, 1px subtle border border-border, no shadow. Hover: -translate-y-1 shadow-lg border-primary/50"
+      }
+    ],
+    "misc": [
+      "Custom Scrollbars: no gutter, stylized thumb.",
+      "Interactive Elements: Layered shadows, nested radii."
+    ]
+  },
+  "component name": [
+    "Button",
+    "Card",
+    "Table",
+    "Input",
+    "Select",
+    "Dialog",
+    "Tabs",
+    "Badge",
+    "Toast (sonner)"
+  ],
+  "grids": {
+    "protocol": "MODE B: High Density Grid (For Dashboards/Analytics)",
+    "base": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6",
+    "spans": {
+      "summary_cards": "col-span-1",
+      "primary_data": "col-span-2 row-span-2 or col-span-3",
+      "feed_list": "col-span-1 row-span-2"
+    },
+    "technical_rules": [
+      "Direct Children Only: Grid items MUST be direct children of grid containers.",
+      "Use align-items: start and align-self: stretch to prevent jagged bottoms."
+    ]
+  },
+  "layouts": {
+    "general": [
+      "Mobile-First Responsive always.",
+      "Generous Spacing Philosophy: use p-6, p-8, p-12.",
+      "Containers with borders must have internal padding (p-6 or p-8)."
+    ],
+    "specific_pages": {
+      "landing": "Asymmetrical layout, high visual impact, overlapping elements, no standard Vercel look. Hero overlay max bg-black/50.",
+      "admin_dashboard": "Strict grid hierarchy, dense/compact spacing, cardless or max 8px border-radius.",
+      "driver_mobile": "Single column stack, massive START/END buttons, high contrast for outdoor visibility.",
+      "student_tracking": "Fullscreen Leaflet map (z-index base), floating glassmorphism card (z-index high) at bottom with route ETA."
+    }
+  },
+  "motion": {
+    "rules": [
+      "MUST respect prefers-reduced-motion.",
+      "Never use 'transition: all'. Explicitly state properties (e.g., transition: transform 0.2s ease, opacity 0.2s ease).",
+      "Hover states on all interactive elements. Hover state color must be a lighter hue of active state color.",
+      "Entrance animations (staggered) for lists using framer-motion."
+    ]
+  },
+  "accessibility": {
+    "contrast": "Minimum 4.5:1 (normal text), 3:1 (large). ALWAYS explicitly set text color on hover.",
+    "testing_attributes": "All interactive/key elements MUST include data-testid attributes (kebab-case, role-based).",
+    "focus": "Focus states must have HIGHER contrast than default state."
+  },
+  "media": {
+    "icons": {
+      "library": "lucide-react",
+      "usage": "Use consistently for navigation, dashboard widgets, and map actions."
+    }
+  },
+  "3d libraries": {
+    "strategy": "Not recommended for this specific use case as clarity and 2D mapping (Leaflet) are priorities for real-time tracking.",
+    "map_library": "react-leaflet (2D interactive tracking) with OpenStreetMap. Apply CSS filters to OSM tiles to match dark mode if needed."
+  },
+  "image_urls": [
+    {
+      "url": "https://images.unsplash.com/photo-1564694202883-46e7448c1b26?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzB8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBjaXR5JTIwYnVzJTIweWVsbG93fGVufDB8fHx8MTc4NzIzNTE1NHww&ixlib=rb-4.1.0&q=85",
+      "description": "Yellow and black modern city bus on road",
+      "category": "Hero Section / Landing Page Background"
+    },
+    {
+      "url": "https://images.unsplash.com/photo-1663162551013-8bb8ab151e11?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDZ8MHwxfHNlYXJjaHwyfHxjb2xsZWdlJTIwc3R1ZGVudHMlMjB3YWxraW5nJTIwY2FtcHVzfGVufDB8fHx8MTc4NzIzNTE1NHww&ixlib=rb-4.1.0&q=85",
+      "description": "College students walking on campus",
+      "category": "Student Login / Registration Page Background"
+    }
+  ],
+  "component_path": "/app/frontend/src/components/ui/",
+  "instructions_to_main_agent": [
+    "IMPORTANT: You have .js and .jsx files, not .tsx files. Follow JS guidelines.",
+    "Create a theme toggle (Light/Dark). Make Dark Mode the primary vibe for Admin (logistics/tech look) and Light Mode for Student/Landing.",
+    "Ensure Leaflet maps are styled cleanly without default cluttered controls. Apply CSS filters to map tiles in dark mode to match theme.",
+    "WebSocket integration must have distinct UI states (connecting/connected/error) using Toasts (sonner) or Badges.",
+    "Implement simulation mode explicitly for Nagpur, India. Ensure markers auto-update without page reload.",
+    "Driver dashboard MUST have massive tap targets for START/END trip buttons as they will be used on bumpy roads.",
+    "Adhere strictly to Shadcn but strip 'Vercel-look'. Make tables dense and borders crisp."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. In frontend design, this creates what users call the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition. Eg: 'transition: all'. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms.",
+    "You MUST NOT center align the app container, ie do not add '.App { text-align: center; }' in the css file. This disrupts the human natural reading flow of text.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style.",
+    "NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "Main agent relies on these image URLs. Missing categories = main agent will use placeholder text which is FORBIDDEN.",
+    "Prioritize using pre-existing components from src/components/ui when applicable.",
+    "Create new components that match the style and conventions of existing components when needed.",
+    "Examine existing components to understand the project's component patterns before creating new ones.",
+    "Use 'sonner' for toasts. Sonner component are located in /app/frontend/src/components/ui/sonner.js",
+    "CRITICAL: DO NOT use complete 'transparent' background in header, overlays, any surface that has content under it. Example: Dropdown with transparent background."
+  ]
+}

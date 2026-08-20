@@ -1,0 +1,39 @@
+{
+  "summary": "RETEST after main agent fix to POST /api/trips/start (pops _id after insert). All previously blocked flows now work end-to-end. Driver UI start->LIVE->end, Student live-tracking with WS + moving next stop, and Admin trip history all verified via UI + curl.",
+  "tested_scope": ["backend", "frontend", "integration", "websocket"],
+  "passed": [
+    "POST /api/trips/start returns HTTP 200 with sanitized JSON: {id, bus_id, driver_id, route_id, start_time, end_time:null, status:'ACTIVE', demo_mode:true}. No _id key present.",
+    "GET /api/trips/{id}/location returns a demo location within ~6s of start (simulation working).",
+    "POST /api/trips/{id}/end -> {ok:true}, bus deactivated.",
+    "Driver UI (/driver): demo-driver -> login-submit navigates to /driver; demo-mode-switch is ON by default; clicking start-trip-btn transitions UI to LIVE state, end-trip-btn appears, coordinates populate and Next Stop card populates within ~6s.",
+    "Student UI (/student): demo-student login -> /student; BUS-01 card shows LIVE badge; clicking track-btn-BUS-01 opens BusTrackingPage; map-view visible; ws pill text shows 'connected'; bottom card shows Next Stop / ETA / Driver.",
+    "Student bus marker actually moving: Next Stop changed from 'Civil Lines' to 'Medical Square' within 10s (WebSocket location:update events flowing).",
+    "Driver end-trip-btn returns UI to IDLE state (start-trip-btn re-appears).",
+    "Admin (awaleadarsh45@gmail.com/admin123) /admin/history shows BUS-01 trip with status COMPLETED after end."
+  ],
+  "failed": [],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "BusTrackingPage", "issues": ["ws-status pill exists but does not carry a data-testid='ws-status' attribute (mentioned in review_request). The connection text is rendered but selecting via data-testid=ws-status fails. Minor: matches text 'connected' works."]}
+    ]
+  },
+  "action_items": [
+    "(Optional/minor) Add data-testid=\"ws-status\" to the connection-status pill in /app/frontend/src/pages/student/BusTrackingPage.jsx to match the contract in the review request. Currently the pill has no testid, only text."
+  ],
+  "critical_code_review_comments": [
+    "server.py start_trip returns a plain dict — consider returning a Pydantic Trip model for schema validation and consistent shape.",
+    "Driver dashboard polls /trips/{id}/location every 2s AND also relies on demo simulation — could use the WebSocket like the student page for consistency and lower REST load.",
+    "CORSMiddleware is added AFTER app.include_router(api); FastAPI still applies it globally but conventionally middleware should be added before including routers. Not a functional bug."
+  ],
+  "updated_files": [],
+  "test_report_links": ["/app/test_reports/iteration_1.json", "/app/test_reports/iteration_2.json"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin awaleadarsh45@gmail.com/admin123, Driver rahul@college.edu/driver123, Student priya@college.edu/student123",
+  "seed_data_creation": "None. Used existing seed (BUS-01 / Route A / Rahul assignment).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 1 fix (server.py trip.pop('_id', None) after insert_one) is verified good. Full driver->student->admin flow passes. Only cosmetic note: ws-status testid missing on BusTrackingPage."
+}

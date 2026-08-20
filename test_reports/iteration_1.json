@@ -1,0 +1,41 @@
+{
+  "summary": "First-finish smoke test. Auth (all 3 roles + invalid 401), /auth/me with Bearer, role guards (student->buses 403, driver->drivers 403), stats overview seed (buses=4, drivers=3, students=5, routes=3), bus CRUD + duplicate 409, driver assignments, trip lifecycle (DB side + active/end), WebSocket (trip:started/location:update/trip:ended), and driver frontend flow all tested. CRITICAL: POST /api/trips/start returns HTTP 500 due to ObjectId serialization even though trip is created in Mongo. This breaks the driver Start Trip UX (button never transitions to LIVE / END TRIP) and consequently the whole student live-tracking scenario. WebSocket still emits location:update events, so backend simulation itself is fine; only the response serialization on /trips/start is broken.",
+  "tested_scope": ["backend", "frontend", "auth", "integration"],
+  "passed": [
+    "POST /api/auth/login returns correct user+token for admin, driver, student",
+    "POST /api/auth/login with wrong password returns 401",
+    "GET /api/auth/me with Bearer token returns driver profile",
+    "Role guard: student POST /api/buses -> 403; driver POST /api/drivers -> 403",
+    "POST /api/buses (with registration_number) creates bus; duplicate bus_number -> 409",
+    "GET /api/stats/overview shows total_buses=4, total_drivers=3, total_students=5, total_routes=3",
+    "GET /api/assignments (as rahul) returns his BUS-01 / Route A assignment",
+    "GET /api/trips/active returns the started trip (server did create it in DB despite 500 response)",
+    "Second POST /api/trips/start returns 409 (correct)",
+    "GET /api/trips/{id}/location returns a location point after ~5s of demo simulation",
+    "POST /api/trips/{id}/end -> {ok:true}; bus returns to available and /trips/active becomes []",
+    "WebSocket wss://.../api/ws connects; receives trip:started, location:update (<3s), and trip:ended events",
+    "Frontend /login loads, demo-driver button fills fields and login-submit navigates to /driver",
+    "Driver dashboard shows BUS-01 assignment card, demo-mode-switch and start-trip-btn"
+  ],
+  "failed": [
+    {
+      "area": "backend - POST /api/trips/start",
+      "issue": "Endpoint returns HTTP 500 with ValueError: [TypeError(\"'ObjectId' object is not iterable\"), TypeError('vars() argument must have __dict__ attribute')] during FastAPI response serialization. Trip IS inserted into Mongo (visible via /api/trips/active) but the response body cannot be returned. Root cause is almost certainly the endpoint returning a raw Mongo document containing _id (ObjectId) instead of the sanitized/pydantic Trip model. Fix in /app/backend/server.py around line 350 (post('/trips/start')): strip _id or return the Trip model instance instead of the raw insert result.",
+      "evidence": "curl POST /api/trips/start returns HTTP 500 body 'Internal Server Error'. Backend traceback in /var/log/supervisor/backend.err.log: fastapi/encoders.py -> ValueError: [TypeError(\"'ObjectId' object is not iterable\"), TypeError('vars() argument must have __dict__ attribute')]. Frontend network tab: /api/trips/start -> 500.",
+      "priority": "HIGH"
+    },
+    {
+      "area": "frontend - Driver Trip Control",
+      "issue": "Because /api/trips/start returns 500, clicking START TRIP does not update the UI. Status stays IDLE, no LIVE badge appears, end-trip-btn never renders, so the driver cannot end the trip via UI (has to call API directly). Consequently student live-track flow and 'trip appears in history after end' flow cannot be exercised via the UI until the backend 500 is fixed.",
+      "evidence": "After clicking demo-mode-switch + start-trip-btn on /driver, page still shows STATUS=IDLE and START TRIP button; network shows POST /api/trips/start 500. Screenshot: driver_dashboard.png.",
+      "priority": "HIGH"
+    }
+  ],
+  "action_items": [
+    "Fix POST /api/trips/start in /app/backend/server.py to return the Pydantic Trip model (or dict without _id) so FastAPI can serialize the response. Verify with: curl -X POST /api/trips/start ... expects 200 with JSON containing id, bus_id, status='ACTIVE'.",
+    "After fix, re-run driver UI flow (START TRIP -> LIVE badge -> coordinates updating -> END TRIP) and student BusTrackingPage (map marker + WS ws-status connected + ETA)."
+  ],
+  "success_rate": {"backend": "92%", "frontend": "60%"},
+  "retest_needed": true,
+  "full_testing_deferred": true
+}
